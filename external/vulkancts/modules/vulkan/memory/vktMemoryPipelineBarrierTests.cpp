@@ -8000,9 +8000,12 @@ vk::VkImageLayout getRandomNextLayout(de::Random &rng, Usage usage, vk::VkImageL
 
     DE_ASSERT(supportedLayoutCount > 0);
 
+    const uint32_t gnllRaw = rng.getUint32();
     size_t nextLayoutNdx =
-        ((size_t)rng.getUint32()) %
+        ((size_t)gnllRaw) %
         (previousLayout == vk::VK_IMAGE_LAYOUT_UNDEFINED ? supportedLayoutCount : supportedLayoutCount - 1);
+    fprintf(stderr, "GNLL raw=%u sup=%d prev=%d nxt=%d\n", gnllRaw, (int)supportedLayoutCount,
+            (int)previousLayout, (int)nextLayoutNdx);
 
     for (size_t layoutNdx = 0; layoutNdx < DE_LENGTH_OF_ARRAY(layouts); layoutNdx++)
     {
@@ -9103,6 +9106,19 @@ de::MovePtr<RenderPassCommand> createRenderPassCommand(de::Random &, const State
     }
 }
 
+// [G6LC-ANALYSIS temporary instrumentation - revert before any commit]
+static void g6lc_logOpPick(const char *where, const State &state, const vector<Op> &ops, Op chosen)
+{
+    fprintf(stderr, "OPPICK %s stage=%d chosen=%d imgLay=%d imgDef=%d memDef=%d TW=%d TR=%d avail=[",
+            where, (int)state.stage, (int)chosen, (int)state.imageLayout, (int)state.imageDefined,
+            (int)state.memoryDefined,
+            (int)state.cache.isValid(vk::VK_PIPELINE_STAGE_TRANSFER_BIT, vk::VK_ACCESS_TRANSFER_WRITE_BIT),
+            (int)state.cache.isValid(vk::VK_PIPELINE_STAGE_TRANSFER_BIT, vk::VK_ACCESS_TRANSFER_READ_BIT));
+    for (size_t i = 0; i < ops.size(); i++)
+        fprintf(stderr, "%s%d", i ? "," : "", (int)ops[i]);
+    fprintf(stderr, "]\n");
+}
+
 de::MovePtr<CmdCommand> createRenderPassCommands(const Memory &memory, de::Random &nextOpRng, State &state,
                                                  const TestConfig &testConfig, size_t &opNdx, size_t opCount)
 {
@@ -9120,6 +9136,7 @@ de::MovePtr<CmdCommand> createRenderPassCommands(const Memory &memory, de::Rando
 
             {
                 const Op op = nextOpRng.choose<Op>(ops.begin(), ops.end());
+                g6lc_logOpPick("rp", state, ops, op);
 
                 if (op == OP_RENDERPASS_END)
                 {
@@ -9166,6 +9183,7 @@ de::MovePtr<CmdCommand> createSecondaryCmdCommands(const Memory &memory, de::Ran
 
             {
                 const Op op = nextOpRng.choose<Op>(ops.begin(), ops.end());
+                g6lc_logOpPick("sec", state, ops, op);
 
                 if (op == OP_SECONDARY_COMMAND_BUFFER_END)
                 {
@@ -9217,6 +9235,7 @@ de::MovePtr<Command> createCmdCommands(const Memory &memory, de::Random &nextOpR
 
             {
                 const Op op = nextOpRng.choose<Op>(ops.begin(), ops.end());
+                g6lc_logOpPick("cmd", state, ops, op);
 
                 if (op == OP_COMMAND_BUFFER_END)
                 {
@@ -9266,6 +9285,7 @@ de::MovePtr<Command> createCmdCommands(const Memory &memory, de::Random &nextOpR
 void createCommands(vector<Command *> &commands, uint32_t seed, const Memory &memory, const TestConfig &testConfig,
                     size_t opCount)
 {
+    fprintf(stderr, "OPPICK-SEED %u\n", seed);
     State state(testConfig.usage, seed);
     // Used to select next operation only
     de::Random nextOpRng(seed ^ 12930809);
@@ -9282,6 +9302,7 @@ void createCommands(vector<Command *> &commands, uint32_t seed, const Memory &me
 
         {
             const Op op = nextOpRng.choose<Op>(ops.begin(), ops.end());
+            g6lc_logOpPick("top", state, ops, op);
 
             if (op == OP_COMMAND_BUFFER_BEGIN)
             {
